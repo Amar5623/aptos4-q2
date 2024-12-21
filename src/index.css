@@ -11,3 +11,17 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+.offer-system {
+  background: #f8f9fa;
+  margin-top: 20px;
+}
+
+.offer-item {
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.offer-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}

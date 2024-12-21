@@ -1,3 +1,5 @@
+app.css
+
 .App {
   text-align: center;
 }
@@ -35,4 +37,8 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.ant-menu-horizontal {
+  overflow: visible !important;
 }
