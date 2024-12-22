@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Typography, Radio, message, Card, Row, Col, Pagination, Tag, Button, Modal, Input } from "antd";
+import { Typography, Radio, message, Card, Row, Col, Pagination, Tag, Button, Modal, Input, Slider, Select } from "antd";
 import { AptosClient } from "aptos";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import AuctionCard from '../components/AuctionCard';
-import { formatDistance } from 'date-fns';
 import { OfferSystem } from '../components/OfferSystem';
-import MyNFTs, { type MyNFTsRef } from './MyNFTs';
+import { type MyNFTsRef } from './MyNFTs';
+import NFTCard from '../components/NFTCard';
 
 
 const { Title } = Typography;
@@ -13,7 +13,7 @@ const { Meta } = Card;
 
 const client = new AptosClient("https://fullnode.devnet.aptoslabs.com/v1");
 
-type NFT = {
+export type NFT = {
   id: number;
   owner: string;
   name: string;
@@ -66,26 +66,15 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
 
   const [isOfferModalVisible, setIsOfferModalVisible] = useState(false);
 
-  useEffect(() => {
-    handleFetchNfts(undefined);
-  }, []);
-
-  useEffect(() => {
-    const checkAndEndExpiredAuctions = async () => {
-        const currentTime = Math.floor(Date.now() / 1000);
-        for (const nft of nfts) {
-            if (nft.is_auction && nft.auction_end < currentTime) {
-                await handleEndAuction(nft);
-            }
-        }
-    };
-
-    const interval = setInterval(checkAndEndExpiredAuctions, 30000); // Check every 30 seconds
-    return () => clearInterval(interval);
-}, [nfts]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 5]);
+  const [dateRange, setDateRange] = useState<[number, number]>([0, Date.now()]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
+  const [filterStatus, setFilterStatus] = useState("all"); // all, auction, buyNow
+  const [showFilters, setShowFilters] = useState(false);
 
 
-  const handleFetchNfts = async (selectedRarity: number | undefined) => {
+  const handleFetchNfts = React.useCallback(async (selectedRarity: number | undefined) => {
     try {
         const response = await client.getAccountResource(
             marketplaceAddr,
@@ -111,18 +100,51 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
         }));
 
         // Filter NFTs based on `for_sale` property and rarity if selected
-        const filteredNfts = decodedNfts.filter((nft) => 
-          (nft.for_sale || (nft.is_auction && isAuctionActive(nft.auction_end))) && 
-          (selectedRarity === undefined || nft.rarity === selectedRarity)
-        );
+        // const filteredNfts = decodedNfts.filter((nft) => 
+        //   (nft.for_sale || (nft.is_auction && isAuctionActive(nft.auction_end))) && 
+        //   (selectedRarity === undefined || nft.rarity === selectedRarity)
+        // );
 
-        setNfts(filteredNfts);
-        setCurrentPage(1);
-    } catch (error) {
-        console.error("Error fetching NFTs by rarity:", error);
-        message.error("Failed to fetch NFTs.");
-    }
-};
+        let filteredNfts = decodedNfts.filter((nft) => {
+          const forSaleOrActiveAuction = nft.for_sale || (nft.is_auction && isAuctionActive(nft.auction_end));
+          const meetsRarityFilter = selectedRarity === undefined || nft.rarity === selectedRarity;
+          const meetsPriceFilter = nft.is_auction ? 
+            (nft.highest_bid / 100000000) >= priceRange[0] && (nft.highest_bid / 100000000) <= priceRange[1] :
+            nft.price >= priceRange[0] && nft.price <= priceRange[1];
+          const meetsSearchFilter = searchQuery === "" || 
+            nft.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            nft.id.toString().includes(searchQuery);
+          const meetsStatusFilter = filterStatus === "all" || 
+            (filterStatus === "auction" && nft.is_auction) ||
+            (filterStatus === "buyNow" && !nft.is_auction);
+    
+          return forSaleOrActiveAuction && meetsRarityFilter && 
+                 meetsPriceFilter && meetsSearchFilter && meetsStatusFilter;
+        });
+
+      // Apply sorting
+      filteredNfts.sort((a, b) => {
+          switch (sortBy) {
+              case "priceHigh":
+                  return b.price - a.price;
+              case "priceLow":
+                  return a.price - b.price;
+              case "oldest":
+                  return a.id - b.id;
+              case "newest":
+              default:
+                  return b.id - a.id;
+          }
+      });
+
+      setNfts(filteredNfts);
+      setCurrentPage(1);
+  } catch (error) {
+      console.error("Error fetching NFTs:", error);
+      message.error("Failed to fetch NFTs.");
+  }
+}, [priceRange, filterStatus, sortBy, searchQuery]);
+
 
   const handleBuyClick = (nft: NFT) => {
     setSelectedNft(nft);
@@ -261,12 +283,51 @@ const handleOfferSubmit = async (amount: number, expiration: number): Promise<vo
   }
 };
 
+type DateRangeKey = '24h' | '7d' | '30d' | 'all';
+
+const handleDateRangeChange = (value: DateRangeKey) => {
+  const now = Date.now();
+  const ranges = {
+    '24h': [now - 86400000, now],
+    '7d': [now - 604800000, now],
+    '30d': [now - 2592000000, now],
+    'all': [0, now]
+  } as const;
+  
+  setDateRange(ranges[value] as [number, number]);
+};
+
+useEffect(() => {
+  handleFetchNfts(undefined);
+}, []);
+
+useEffect(() => {
+  const checkAndEndExpiredAuctions = async () => {
+    const currentTime = Math.floor(Date.now() / 1000);
+    for (const nft of nfts) {
+      if (nft.is_auction && nft.auction_end < currentTime) {
+        await handleEndAuction(nft);
+      }
+    }
+  };
+
+  const interval = setInterval(checkAndEndExpiredAuctions, 30000);
+  return () => clearInterval(interval);
+}, [nfts, handleEndAuction]);
+
 useEffect(() => {
   handleFetchNfts(rarity === 'all' ? undefined : rarity);
-}, [marketplaceAddr]);
+}, [
+  marketplaceAddr,
+  rarity,
+  priceRange,
+  filterStatus,
+  sortBy,
+  searchQuery
+]);
 
 
-  const paginatedNfts = nfts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+const paginatedNfts = nfts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div
@@ -297,6 +358,102 @@ useEffect(() => {
           <Radio.Button value={4}>Super Rare</Radio.Button>
         </Radio.Group>
       </div>
+
+      {/* Advanced Filters Panel */}
+      <Button 
+        onClick={() => setShowFilters(!showFilters)} 
+        style={{ marginBottom: 16 }}
+      >
+        {showFilters ? 'Hide Filters' : 'Show Filters'}
+      </Button>
+
+      {showFilters && (
+        <div style={{ marginBottom: 20, padding: 16, border: '1px solid #d9d9d9', borderRadius: 8 }}>
+          <Row gutter={[16, 16]}>
+            <Col span={24} md={8}>
+              <Typography.Text strong>Price Range</Typography.Text>
+              <Slider
+                range
+                value={priceRange}
+                onChange={(value: number[]) => setPriceRange(value as [number, number])}
+                min={0}
+                max={5}
+                step={0.1}
+                marks={{
+                  0: '0 APT',
+                  5: '5 APT'
+                }}
+              />
+            </Col>
+            
+            <Col span={24} md={8}>
+              <Typography.Text strong>Date Listed</Typography.Text>
+              <Select
+                style={{ width: '100%' }}
+                onChange={(value: DateRangeKey) => handleDateRangeChange(value)}
+              >
+                <Select.Option value="24h">Last 24 hours</Select.Option>
+                <Select.Option value="7d">Last 7 days</Select.Option>
+                <Select.Option value="30d">Last 30 days</Select.Option>
+                <Select.Option value="all">All time</Select.Option>
+              </Select>
+            </Col>
+
+            <Col span={24} md={8}>
+              <Typography.Text strong>Status</Typography.Text>
+              <Select
+                style={{ width: '100%' }}
+                value={filterStatus}
+                onChange={setFilterStatus}
+              >
+                <Select.Option value="all">All Items</Select.Option>
+                <Select.Option value="auction">Active Auctions</Select.Option>
+                <Select.Option value="buyNow">Buy Now Only</Select.Option>
+              </Select>
+            </Col>
+
+            <Col span={24} md={8}>
+              <Typography.Text strong>Sort By</Typography.Text>
+              <Select
+                style={{ width: '100%' }}
+                value={sortBy}
+                onChange={setSortBy}
+              >
+                <Select.Option value="newest">Newest First</Select.Option>
+                <Select.Option value="oldest">Oldest First</Select.Option>
+                <Select.Option value="priceLow">Price: Low to High</Select.Option>
+                <Select.Option value="priceHigh">Price: High to Low</Select.Option>
+              </Select>
+            </Col>
+
+            <Col span={24} md={8}>
+              <Typography.Text strong>Search</Typography.Text>
+              <Input
+                placeholder="Search by name or ID"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                allowClear
+              />
+            </Col>
+
+            <Col span={24}>
+            <Button onClick={() => {
+              setPriceRange([0, 5]);
+              setDateRange([0, Date.now()]);
+              setSearchQuery("");
+              setSortBy("newest");
+              setFilterStatus("all");
+              setRarity('all');
+              handleFetchNfts(undefined);
+            }}>
+              Clear All Filters
+            </Button>
+
+            </Col>
+          </Row>
+        </div>
+      )}
+
   
       {/* Card Grid */}
       <Row
@@ -310,59 +467,27 @@ useEffect(() => {
         }}
       >
         {paginatedNfts.map((nft) => (
-          <Col
-            key={nft.id}
-            xs={24} sm={12} md={8} lg={6} xl={6}
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
+        <Col
+          key={nft.id}
+          xs={24} sm={12} md={8} lg={6} xl={6}
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <NFTCard
+            nft={nft}
+            onBuyClick={handleBuyClick}
+            onBidClick={handleBidClick}
+            onOfferClick={(nft) => {
+              setSelectedNft(nft);
+              setIsOfferModalVisible(true);
             }}
-          >
-            {nft.is_auction ? (
-              <AuctionCard 
-              nft={nft} 
-              onPlaceBid={() => handleBidClick(nft)} 
-              />
-            ) : (
-              <Card
-                hoverable
-                style={{
-                  width: "100%",
-                  maxWidth: "240px",
-                  margin: "0 auto",
-                }}
-                cover={<img alt={nft.name} src={nft.uri} />}
-                actions={[
-                  <Button type="link" onClick={() => handleBuyClick(nft)}>
-                    Buy
-                  </Button>,
-                  <Button 
-                    type="link" 
-                    onClick={() => {
-                      setSelectedNft(nft);
-                      setIsOfferModalVisible(true);
-                    }}
-                  >
-                    Make Offer
-                  </Button>
-                ]}
-              >
-                <Tag
-                  color={rarityColors[nft.rarity]}
-                  style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "10px" }}
-                >
-                  {rarityLabels[nft.rarity]}
-                </Tag>
+          />
+        </Col>
+      ))}
 
-                <Meta title={nft.name} description={`Price: ${nft.price} APT`} />
-                <p>{nft.description}</p>
-                <p>ID: {nft.id}</p>
-                <p>Owner: {truncateAddress(nft.owner)}</p>
-              </Card>
-            )}
-          </Col>
-        ))}
       </Row>
   
       {/* Pagination */}
