@@ -74,7 +74,7 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
   const [showFilters, setShowFilters] = useState(false);
 
 
-  const handleFetchNfts = React.useCallback(async (selectedRarity: number | undefined) => {
+  const handleFetchNfts = React.useCallback(async (selectedRarity: number | undefined, forceRefresh: boolean = false) => {
     try {
         const response = await client.getAccountResource(
             marketplaceAddr,
@@ -234,24 +234,22 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
   };
   
 
-  const handleEndAuction = async (nft: NFT) => {
+  const handleEndAuction = React.useCallback(async (nftId: number) => {
     try {
         const payload = {
             type: "entry_function_payload",
             function: `${marketplaceAddr}::NFTMarketplace::end_auction`,
             type_arguments: [],
-            arguments: [marketplaceAddr, nft.id.toString()],
+            arguments: [marketplaceAddr, nftId.toString()]
         };
 
         const response = await (window as any).aptos.signAndSubmitTransaction(payload);
         await client.waitForTransaction(response.hash);
-        message.success("Auction ended successfully!");
-        handleFetchNfts(rarity === 'all' ? undefined : rarity);  // Pass the current rarity filter
+        handleFetchNfts(undefined, true); // Pass both parameters
     } catch (error) {
         console.error("Error ending auction:", error);
-        message.error("Failed to end auction.");
     }
-};
+}, [marketplaceAddr, handleFetchNfts]);
 
 
 const handleOfferSubmit = async (amount: number, expiration: number): Promise<void> => {
@@ -299,14 +297,21 @@ const handleDateRangeChange = (value: DateRangeKey) => {
 
 useEffect(() => {
   handleFetchNfts(undefined);
-}, []);
+}, [handleFetchNfts]);
+
+useEffect(() => {
+  const interval = setInterval(() => {
+    handleFetchNfts(undefined);
+  }, 5000);
+  return () => clearInterval(interval);
+}, [handleFetchNfts]);
 
 useEffect(() => {
   const checkAndEndExpiredAuctions = async () => {
     const currentTime = Math.floor(Date.now() / 1000);
     for (const nft of nfts) {
       if (nft.is_auction && nft.auction_end < currentTime) {
-        await handleEndAuction(nft);
+        await handleEndAuction(nft.id); // Pass just the ID instead of the whole NFT object
       }
     }
   };
@@ -316,7 +321,7 @@ useEffect(() => {
 }, [nfts, handleEndAuction]);
 
 useEffect(() => {
-  handleFetchNfts(rarity === 'all' ? undefined : rarity);
+  handleFetchNfts(rarity === 'all' ? undefined : rarity, false);
 }, [
   marketplaceAddr,
   rarity,

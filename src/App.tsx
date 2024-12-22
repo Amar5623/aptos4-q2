@@ -2,13 +2,14 @@
 
 import React, { useState } from "react";
 import "./App.css";
-import { Layout, Modal, Form, Input, Select, Button, message } from "antd";
+import { Layout, Modal, Form, Input, Select, Button, message, Space } from "antd";
 import NavBar from "./components/NavBar";
 import MarketView from "./pages/MarketView";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import MyNFTs from "./pages/MyNFTs";
 import { AptosClient } from "aptos";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import MintingConfig from "./components/MintingConfig";
 
 const client = new AptosClient("https://fullnode.devnet.aptoslabs.com/v1");
 const marketplaceAddr = "0xa256fddba13780914e70b6f74cf24af7548e796ad8dcbf331c85c93327f99ec4";
@@ -25,17 +26,23 @@ function App() {
       const nameVector = Array.from(new TextEncoder().encode(values.name));
       const descriptionVector = Array.from(new TextEncoder().encode(values.description));
       const uriVector = Array.from(new TextEncoder().encode(values.uri));
-
+  
       const entryFunctionPayload = {
         type: "entry_function_payload",
-        function: `${marketplaceAddr}::NFTMarketplace::mint_nft`,
+        function: `${marketplaceAddr}::NFTMarketplace::mint_nft_with_fee`,
         type_arguments: [],
-        arguments: [nameVector, descriptionVector, uriVector, values.rarity],
+        arguments: [
+          marketplaceAddr,
+          nameVector,
+          descriptionVector,
+          uriVector,
+          values.rarity
+        ]
       };
-
+  
       const txnResponse = await (window as any).aptos.signAndSubmitTransaction(entryFunctionPayload);
       await client.waitForTransaction(txnResponse.hash);
-
+  
       message.success("NFT minted successfully!");
       setIsModalVisible(false);
     } catch (error) {
@@ -55,11 +62,13 @@ function App() {
         </Routes>
 
         <Modal
-          title="Mint New NFT"
-          visible={isModalVisible}
-          onCancel={() => setIsModalVisible(false)}
-          footer={null}
-        >
+        title="Mint New NFT"
+        visible={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        footer={null}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <MintingConfig marketplaceAddr={marketplaceAddr} />
           <Form layout="vertical" onFinish={handleMintNFT}>
             <Form.Item label="Name" name="name" rules={[{ required: true, message: "Please enter a name!" }]}>
               <Input />
@@ -79,12 +88,14 @@ function App() {
               </Select>
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Mint NFT
-              </Button>
+            <Button type="primary" htmlType="submit">
+              Mint NFT
+            </Button>
             </Form.Item>
           </Form>
-        </Modal>
+        </Space>
+      </Modal>
+
       </Layout>
     </Router>
   );
