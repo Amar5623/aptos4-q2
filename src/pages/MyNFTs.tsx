@@ -1,10 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, forwardRef, useImperativeHandle, ForwardedRef } from "react";
 import { Typography, Card, Row, Col, Pagination, message as antMessage, Button, Input, Modal } from "antd";
 import { AptosClient, Types } from "aptos";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import TransferModal from '../components/TransferModal';
 import { GiftOutlined } from '@ant-design/icons';
-import { OfferSystem } from '../components/OfferSystem';
 import { OffersList } from '../components/OffersList';
 
 
@@ -27,6 +26,7 @@ interface NFT {
   price: number;
   for_sale: boolean;
   owner: string;
+  is_auction: boolean;
 }
 
 interface GiftDetail {
@@ -44,6 +44,10 @@ interface NFTOffers {
   [key: number]: any[];
 }
 
+export interface MyNFTsRef {
+  fetchOffersForNFT: (nftId: number) => Promise<void>;
+}
+
 const hexToUint8Array = (hexString: string): Uint8Array => {
   const bytes = new Uint8Array(hexString.length / 2);
   for (let i = 0; i < hexString.length; i += 2) {
@@ -53,11 +57,11 @@ const hexToUint8Array = (hexString: string): Uint8Array => {
 };
 
 
-const MyNFTs: React.FC = () => {
+const MyNFTs = forwardRef<MyNFTsRef, {}>((props, ref) => {
   const pageSize = 8;
   const [currentPage, setCurrentPage] = useState(1);
   const [nfts, setNfts] = useState<NFT[]>([]);
-  const [nftOffers, setNFTOffers] = useState<NFTOffers>({});
+  const [nftOffers, setNFTOffers] = useState<Record<number, any[]>>({});
   const [totalNFTs, setTotalNFTs] = useState(0);
   const { account, signAndSubmitTransaction } = useWallet();
   const marketplaceAddr = "0xa256fddba13780914e70b6f74cf24af7548e796ad8dcbf331c85c93327f99ec4";
@@ -77,7 +81,7 @@ const MyNFTs: React.FC = () => {
   const [giftDetails, setGiftDetails] = useState<GiftDetails>({});
 
   const [offers, setOffers] = useState([]);
-  const [selectedNFTForOffer, setSelectedNFTForOffer] = useState<NFT | null>(null);
+
 
   const fetchUserNFTs = useCallback(async () => {
     if (!account) return;
@@ -153,27 +157,6 @@ const MyNFTs: React.FC = () => {
       antMessage.error("Failed to fetch your NFTs.");
     }
   }, [account, marketplaceAddr]);
-
-  const acceptOffer = async (nftId: string, offerId: string) => {
-    // Cast window.aptos to handle the transaction
-    const payload = {
-      type: "entry_function_payload",
-      function: `${marketplaceAddr}::NFTMarketplace::accept_offer`,
-      type_arguments: [],
-      arguments: [nftId, offerId]
-    };
-    
-    try {
-      // Use the window.aptos object directly
-      const response = await (window as any).aptos.signAndSubmitTransaction(payload);
-      await client.waitForTransaction(response.hash);
-      return response.hash;
-    } catch (error) {
-      console.error("Error accepting offer:", error);
-      throw error;
-    }
-};
-
 
 
   const handleSellClick = (nft: NFT) => {
@@ -297,54 +280,63 @@ const MyNFTs: React.FC = () => {
         console.error('Error fetching gift details:', error);
       }
     };
-
-    const handleOfferSubmit = async (nftId: number, amount: number, expiration: number) => {
+   
+    const fetchOffersForNFT = async (nftId: number): Promise<void> => {
+      console.log('MyNFTs - Fetching offers for NFT:', nftId);
+      
       try {
-        const payload = {
-          type: "entry_function_payload",
-          function: `${marketplaceAddr}::NFTMarketplace::make_offer`,
-          type_arguments: [],
-          arguments: [
-            nftId.toString(),
-            Math.floor(amount * 100000000),
-            Math.floor(Date.now() / 1000) + expiration
-          ],
-          data: {} // Add this to match InputTransactionData type
-        };
-        
-        const response = await (window as any).aptos.signAndSubmitTransaction(payload);
-        await client.waitForTransaction(response.hash);
-        fetchOffersForNFT(nftId);
-      } catch (error) {
-        console.error("Error submitting offer:", error);
-        antMessage.error("Failed to submit offer");
-      }
-    };
-    
-    const fetchOffersForNFT = async (nftId: number) => {
-      try {
-        const offers = await client.view({
+        // First get all offer IDs for the NFT
+        const response = await client.view({
           function: `${marketplaceAddr}::NFTMarketplace::get_offers_for_nft`,
           type_arguments: [],
-          arguments: [nftId.toString()]
+          arguments: [marketplaceAddr, nftId.toString()]
         });
-        setNFTOffers((prev: { [key: number]: any[] }) => ({
+        
+        // Extract offer IDs from nested array structure
+        const offerIds = (response as any[])[0] as string[];
+        console.log('MyNFTs - Offer IDs:', offerIds);
+        
+        const offersWithDetails = await Promise.all(
+          offerIds.map(async (offerId: string) => {
+            const details = await client.view({
+              function: `${marketplaceAddr}::NFTMarketplace::get_offer_details`,
+              type_arguments: [],
+              arguments: [marketplaceAddr, offerId.toString()]  // Ensure offerId is string
+            });
+            
+            return {
+              offerId,
+              nftId: details[0],
+              buyer: details[1],
+              amount: details[2],
+              expiration: details[3],
+              status: details[4]
+            };
+          })
+        );
+        
+        console.log('MyNFTs - Offers with details:', offersWithDetails);
+        setNFTOffers(prev => ({
           ...prev,
-          [nftId]: offers
+          [nftId]: offersWithDetails
         }));
       } catch (error) {
-        console.error("Error fetching offers:", error);
+        console.error('MyNFTs - Error fetching offers:', error);
       }
     };
-    
+      
+  
+    useImperativeHandle(ref, () => ({
+      fetchOffersForNFT
+    }));
     
     const handleAcceptOffer = async (nftId: number, offerId: string) => {
       try {
-        const payload: Types.TransactionPayload = {
+        const payload = {
           type: "entry_function_payload",
           function: `${marketplaceAddr}::NFTMarketplace::accept_offer`,
           type_arguments: [],
-          arguments: [nftId.toString(), offerId]
+          arguments: [marketplaceAddr, nftId.toString(), offerId]
         };
         
         const response = await (window as any).aptos.signAndSubmitTransaction(payload);
@@ -356,7 +348,6 @@ const MyNFTs: React.FC = () => {
         antMessage.error("Failed to accept offer");
       }
     };
-
 
   useEffect(() => {
     fetchUserNFTs();
@@ -463,21 +454,56 @@ const MyNFTs: React.FC = () => {
               <p>{nft.description}</p>
               <p style={{ margin: "10px 0" }}>For Sale: {nft.for_sale ? "Yes" : "No"}</p>
   
-              <OfferSystem 
-                nftId={nft.id}
-                currentPrice={nft.price}
-                onOfferSubmit={(amount, expiration) => handleOfferSubmit(nft.id, amount, expiration)}
-              />
-              <OffersList 
-                offers={nftOffers[nft.id] || []}
-                onAcceptOffer={(offerId) => handleAcceptOffer(nft.id, offerId)}
-              />
-
-
             </Card>
           </Col>
         ))}
       </Row>
+
+      <Title level={3} style={{ marginTop: "40px" }}>Received Offers</Title>
+      {nfts.filter(nft => (nftOffers[nft.id] || []).length > 0).length > 0 ? (
+        <Row 
+          gutter={[24, 24]}
+          style={{
+            width: "100%",
+            display: "flex",
+            justifyContent: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          {nfts
+            .filter(nft => (nftOffers[nft.id] || []).length > 0)
+            .map(nft => (
+              <Col key={nft.id} xs={24} sm={12} md={8} lg={6}>
+                <Card 
+                  title={`Offers for ${nft.name}`}
+                  style={{ 
+                    width: "100%",
+                    marginBottom: "20px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
+                  }}
+                >
+                  <img 
+                    src={nft.uri} 
+                    alt={nft.name}
+                    style={{ 
+                      width: "100%", 
+                      height: "200px",
+                      objectFit: "cover",
+                      marginBottom: "15px"
+                    }}
+                  />
+                  <OffersList 
+                    offers={nftOffers[nft.id] || []}
+                    onAcceptOffer={(offerId) => handleAcceptOffer(nft.id, offerId)}
+                  />
+                </Card>
+              </Col>
+            ))}
+        </Row>
+      ) : (
+        <p style={{ color: "#666", fontSize: "16px" }}>No offers received yet</p>
+      )}
+
   
       <div style={{ marginTop: 30, marginBottom: 30 }}>
         <Pagination
@@ -560,6 +586,6 @@ const MyNFTs: React.FC = () => {
         />
     </div>
   );  
-};
+});
 
 export default MyNFTs;

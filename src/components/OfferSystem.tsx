@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { Input, Button, Form } from 'antd';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 
 interface OfferSystemProps {
   nftId: number;
   currentPrice: number;
-  onOfferSubmit: (amount: number, expiration: number) => void;
+  onOfferSubmit: (amount: number, expiration: number) => Promise<void>;
 }
 
 export const OfferSystem = ({ nftId, currentPrice, onOfferSubmit }: OfferSystemProps) => {
@@ -12,40 +13,49 @@ export const OfferSystem = ({ nftId, currentPrice, onOfferSubmit }: OfferSystemP
   const [expirationDays, setExpirationDays] = useState('7');
   const { account } = useWallet();
 
-  const handleSubmit = () => {
-    const amount = parseFloat(offerAmount);
-    const expiration = parseInt(expirationDays) * 24 * 60 * 60; // Convert days to seconds
-    onOfferSubmit(amount, expiration);
+  const handleSubmit = async () => {
+    if (!offerAmount || !expirationDays) return;
+
+    console.log('OfferSystem - Submitting offer:', {
+      amount: offerAmount,
+      expirationDays,
+      amountInOctas: Math.floor(parseFloat(offerAmount) * 100000000),
+      expirationTimestamp: Math.floor(Date.now() / 1000) + (parseInt(expirationDays) * 24 * 60 * 60)
+    });
+    
+    const amountInOctas = Math.floor(parseFloat(offerAmount) * 100000000);
+    const expirationTimestamp = Math.floor(Date.now() / 1000) + (parseInt(expirationDays) * 24 * 60 * 60);
+    
+    await onOfferSubmit(amountInOctas, expirationTimestamp);
   };
 
   return (
-    <div className="offer-system p-4 border rounded">
-      <h3>Make an Offer</h3>
-      <div className="mb-3">
-        <label>Offer Amount (APT)</label>
-        <input
+    <Form layout="vertical">
+      <Form.Item label="Offer Amount (APT)">
+        <Input
           type="number"
           value={offerAmount}
           onChange={(e) => setOfferAmount(e.target.value)}
-          className="form-control"
+          min="0"
+          step="0.1"
         />
-      </div>
-      <div className="mb-3">
-        <label>Expires in (days)</label>
-        <input
+      </Form.Item>
+      <Form.Item label="Expires in (days)">
+        <Input
           type="number"
           value={expirationDays}
           onChange={(e) => setExpirationDays(e.target.value)}
-          className="form-control"
+          min="1"
         />
-      </div>
-      <button 
+      </Form.Item>
+      <Button
+        type="primary"
         onClick={handleSubmit}
-        className="btn btn-primary"
-        disabled={!account}
+        disabled={!account || !offerAmount}
+        block
       >
         Submit Offer
-      </button>
-    </div>
+      </Button>
+    </Form>
   );
 };

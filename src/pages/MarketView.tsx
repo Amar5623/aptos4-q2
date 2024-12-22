@@ -4,6 +4,9 @@ import { AptosClient } from "aptos";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import AuctionCard from '../components/AuctionCard';
 import { formatDistance } from 'date-fns';
+import { OfferSystem } from '../components/OfferSystem';
+import MyNFTs, { type MyNFTsRef } from './MyNFTs';
+
 
 const { Title } = Typography;
 const { Meta } = Card;
@@ -53,12 +56,15 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
   const [nfts, setNfts] = useState<NFT[]>([]);
   const [rarity, setRarity] = useState<'all' | number>('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const myNFTsRef = React.useRef<MyNFTsRef>(null);
   const pageSize = 8;
 
   const [isBuyModalVisible, setIsBuyModalVisible] = useState(false);
   const [selectedNft, setSelectedNft] = useState<NFT | null>(null);
   const [bidAmount, setBidAmount] = useState("");
   const [isBidModalVisible, setIsBidModalVisible] = useState(false);
+
+  const [isOfferModalVisible, setIsOfferModalVisible] = useState(false);
 
   useEffect(() => {
     handleFetchNfts(undefined);
@@ -225,7 +231,40 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
     }
 };
 
+
+const handleOfferSubmit = async (amount: number, expiration: number): Promise<void> => {
+  if (!selectedNft) return;
+
+  console.log('MarketView - handleOfferSubmit:', {
+    nftId: selectedNft?.id,
+    amount,
+    expiration,
+    marketplaceAddr
+  });
   
+  try {
+    const payload = {
+      type: "entry_function_payload",
+      function: `${marketplaceAddr}::NFTMarketplace::make_offer`,
+      type_arguments: [],
+      arguments: [marketplaceAddr, selectedNft.id.toString(), amount.toString(), expiration.toString()]
+    };
+    console.log('MarketView - Submitting transaction with payload:', payload);
+    const response = await (window as any).aptos.signAndSubmitTransaction(payload);
+    console.log('MarketView - Transaction response:', response);
+    if (response) {
+      setIsOfferModalVisible(false);
+      await handleFetchNfts(rarity === 'all' ? undefined : rarity);
+    }
+  } catch (error) {
+    console.error("Error submitting offer:", error);
+  }
+};
+
+useEffect(() => {
+  handleFetchNfts(rarity === 'all' ? undefined : rarity);
+}, [marketplaceAddr]);
+
 
   const paginatedNfts = nfts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -297,6 +336,15 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
                 actions={[
                   <Button type="link" onClick={() => handleBuyClick(nft)}>
                     Buy
+                  </Button>,
+                  <Button 
+                    type="link" 
+                    onClick={() => {
+                      setSelectedNft(nft);
+                      setIsOfferModalVisible(true);
+                    }}
+                  >
+                    Make Offer
                   </Button>
                 ]}
               >
@@ -391,6 +439,20 @@ const MarketView: React.FC<MarketViewProps> = ({ marketplaceAddr }) => {
         )}
       </Modal>
 
+      <Modal
+        title="Make Offer"
+        visible={isOfferModalVisible}
+        onCancel={() => setIsOfferModalVisible(false)}
+        footer={null}
+      >
+        {selectedNft && (
+          <OfferSystem
+            nftId={selectedNft.id}
+            currentPrice={selectedNft.price}
+            onOfferSubmit={handleOfferSubmit}
+          />
+        )}
+      </Modal>
 
     </div>
   );

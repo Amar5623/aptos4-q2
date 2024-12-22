@@ -12,16 +12,26 @@ code {
     monospace;
 }
 
-.offer-system {
-  background: #f8f9fa;
-  margin-top: 20px;
+.offers-list {
+  width: 100%;
 }
 
 .offer-item {
-  background: white;
   transition: all 0.3s ease;
 }
 
 .offer-item:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.accept-button {
+  background: linear-gradient(45deg, #1890ff, #40a9ff);
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.accept-button:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
 }
