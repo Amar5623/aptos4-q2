@@ -4,7 +4,7 @@ import { WalletSelector } from "@aptos-labs/wallet-adapter-ant-design";
 import "@aptos-labs/wallet-adapter-ant-design/dist/index.css";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { AptosClient } from "aptos";
-import { AccountBookOutlined, DownOutlined, LogoutOutlined } from "@ant-design/icons";
+import { AccountBookOutlined, DownOutlined, LogoutOutlined, BarChartOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
 
 const { Header } = Layout;
@@ -77,6 +77,11 @@ const NavBar: React.FC<NavBarProps> = ({ onMintNFTClick }) => {
           </Menu.Item>
           <Menu.Item key="mint-nft" onClick={onMintNFTClick}>
             <span style={{ color: "#fff" }}>Mint NFT</span>
+          </Menu.Item>
+          <Menu.Item key="analytics">
+          <Link to="/analytics">
+            <BarChartOutlined /> Analytics
+          </Link>
           </Menu.Item>
         </Menu>
       </div>

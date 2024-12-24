@@ -10,9 +10,20 @@ import MyNFTs from "./pages/MyNFTs";
 import { AptosClient } from "aptos";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import MintingConfig from "./components/MintingConfig";
+import Analytics from './pages/Analytics';
+import { AptosWalletAdapterProvider } from '@aptos-labs/wallet-adapter-react';
+import { PetraWallet } from 'petra-plugin-wallet-adapter';
+import { MartianWallet } from '@martianwallet/aptos-wallet-adapter';
+import { PontemWallet } from '@pontem/wallet-adapter-plugin';
 
 const client = new AptosClient("https://fullnode.devnet.aptoslabs.com/v1");
 const marketplaceAddr = "0xa256fddba13780914e70b6f74cf24af7548e796ad8dcbf331c85c93327f99ec4";
+
+const wallets = [
+  new PetraWallet(),
+  new MartianWallet(),
+  new PontemWallet()
+];
 
 function App() {
   const { signAndSubmitTransaction } = useWallet();
@@ -52,6 +63,7 @@ function App() {
   };
 
   return (
+    <AptosWalletAdapterProvider plugins={wallets} autoConnect={true}>
     <Router>
       <Layout>
         <NavBar onMintNFTClick={handleMintNFTClick} /> {/* Pass handleMintNFTClick to NavBar */}
@@ -59,6 +71,7 @@ function App() {
         <Routes>
           <Route path="/" element={<MarketView marketplaceAddr={marketplaceAddr} />} />
           <Route path="/my-nfts" element={<MyNFTs />} />
+          <Route path="/analytics" element={<Analytics />} />
         </Routes>
 
         <Modal
@@ -98,6 +111,7 @@ function App() {
 
       </Layout>
     </Router>
+    </AptosWalletAdapterProvider>
   );
 }
 
